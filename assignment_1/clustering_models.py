@@ -113,6 +113,7 @@ def generate_data(n=1000, centers=None, random_state=None):
     X, y = make_blobs(n_samples=n, n_features=2, centers=centers, random_state=random_state)
     plt.scatter(X[:, 0], X[:, 1])
     plt.title(f"1000 sampled points in 2D, random state {random_state}")
+    plt.savefig(f"images/data_{random_state}.png")
     plt.show()
     return X
 
@@ -167,58 +168,30 @@ def diff_l_values():
         run_pdc_dp_means(l, X, task_initials)
 
 
-def monkey_clustering(alg: str):
-    # TODO: edit this function and debug reshape
-    img = Image.open("images/monkey.jpg")
+def monkey_clustering_kmeans(k, X):
+    # Apply K-means clustering to the RGB values
+    kmeans = Kmeans(k)
+    labels = kmeans.fit(X)
 
-    # Scale down the image by a factor input
-    factor = 8
-    width, height = img.size
-    new_size = (width // factor, height // factor)
-    img = img.resize(new_size, resample=Image.BILINEAR)
+    # Replace each pixel's color with the value of the centroid of the cluster it was assigned to
+    x_clustered = np.array([kmeans.centroids[label] for label in labels])
+    x_clustered = x_clustered.reshape(X.shape)
+    img_clustered = Image.fromarray(x_clustered.astype('uint8'), 'RGB')
+    img_clustered.save(f"images/monkey_clustered_kmeans_k_{k}.png")
+    img_clustered.show()
 
-    # Convert the image to a numpy array
-    X = np.array(img)
 
-    # Reshape the array to be 2-dimensional
-    X = X.reshape(-1, 3)
+def monkey_clustering_pdc_dp_means(l, X):
+    # Apply PDC DP-means clustering to the RGB values
+    pdc_dp_means = PDCDPmeans(l)
+    labels = pdc_dp_means.fit(X)
 
-    if alg == "kmeans":
-        # Apply K-means clustering to the RGB values
-        k = 8
-        kmeans = Kmeans(k)
-        labels = kmeans.fit(X)
-        plt.title("RGB k=" + str(k))
-        plt.scatter(X[:, 0], X[:, 1], c=labels)
-        plt.show()
-
-        # Replace each pixel's color with the value of the centroid of the cluster it was assigned to
-        new_X = np.zeros_like(X)
-        for j in range(k):
-            new_X[labels == j] = kmeans.centroids[j]
-
-    else:
-        # Apply dp-means clustering to the RGB values
-        l = 2
-        pdc_dp_means = PDCDPmeans(l)
-        labels = pdc_dp_means.fit(X)
-        plt.title("RGB l=" + str(l))
-        plt.scatter(X[:, 0], X[:, 1], c=labels)
-        plt.show()
-        plt.scatter(X[:, 0], X[:, 1], c=labels)
-        plt.show()
-
-        # Replace each pixel's color with the value of the centroid of the cluster it was assigned to
-        new_X = np.zeros_like(X)
-        for j in range(len(pdc_dp_means.centroids)):
-            new_X[labels == j] = pdc_dp_means.centroids[j]
-
-    # Reshape the array back to its original shape
-    new_X = new_X.reshape(img.size[1], img.size[0], 3)
-
-    # Create a new image from the array and display it
-    new_img = Image.fromarray(np.uint8(new_X))
-    new_img.show()
+    # Replace each pixel's color with the value of the centroid of the cluster it was assigned to
+    x_clustered = np.array([pdc_dp_means.centroids[label] for label in labels])
+    x_clustered = x_clustered.reshape(X.shape)
+    img_clustered = Image.fromarray(x_clustered.astype('uint8'), 'RGB')
+    img_clustered.save(f"images/monkey_clustered_pdc_dp_means_l_{l}.png")
+    img_clustered.show()
 
 
 def task2():
@@ -228,7 +201,27 @@ def task2():
 
 
 def task3():
-    monkey_clustering("kmeans")
+    img = Image.open("images/monkey.jpg")
+
+    # Scale down the image by a factor input
+    factor = 4
+    width, height = img.size
+    new_size = (width // factor, height // factor)
+    img_compressed = img.resize(new_size, resample=Image.BILINEAR)
+    img_compressed.save(f"images/monkey_compressed.png")
+
+    # Convert the image to a numpy array
+    X = np.array(img_compressed)
+
+    # flatten the array
+    flat_X = X.reshape((X.shape[0] * X.shape[1], X.shape[2]))
+
+    # CLuster with different values of k
+    for k in [10, 50, 100]:
+        monkey_clustering_kmeans(k, flat_X)
+    # Cluster with different values of l
+    for l in [100, 20, 5]:
+        monkey_clustering_pdc_dp_means(l, flat_X)
 
 
 def main():
@@ -238,3 +231,8 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+# TODO:
+# 1. in the first section of task 2 add to description that its different datasets
+# 2. organize graphs order
+# 3. maybe add another graph to each algorithm
