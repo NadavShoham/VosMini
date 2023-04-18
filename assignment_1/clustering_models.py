@@ -168,27 +168,27 @@ def diff_l_values():
         run_pdc_dp_means(l, X, task_initials)
 
 
-def monkey_clustering_kmeans(k, X):
+def monkey_clustering_kmeans(k, X, shape):
     # Apply K-means clustering to the RGB values
     kmeans = Kmeans(k)
     labels = kmeans.fit(X)
 
     # Replace each pixel's color with the value of the centroid of the cluster it was assigned to
     x_clustered = np.array([kmeans.centroids[label] for label in labels])
-    x_clustered = x_clustered.reshape(X.shape)
+    x_clustered = x_clustered.reshape(shape)
     img_clustered = Image.fromarray(x_clustered.astype('uint8'), 'RGB')
     img_clustered.save(f"images/monkey_clustered_kmeans_k_{k}.png")
     img_clustered.show()
 
 
-def monkey_clustering_pdc_dp_means(l, X):
+def monkey_clustering_pdc_dp_means(l, X, shape):
     # Apply PDC DP-means clustering to the RGB values
     pdc_dp_means = PDCDPmeans(l)
     labels = pdc_dp_means.fit(X)
 
     # Replace each pixel's color with the value of the centroid of the cluster it was assigned to
     x_clustered = np.array([pdc_dp_means.centroids[label] for label in labels])
-    x_clustered = x_clustered.reshape(X.shape)
+    x_clustered = x_clustered.reshape(shape)
     img_clustered = Image.fromarray(x_clustered.astype('uint8'), 'RGB')
     img_clustered.save(f"images/monkey_clustered_pdc_dp_means_l_{l}.png")
     img_clustered.show()
@@ -217,11 +217,12 @@ def task3():
     flat_X = X.reshape((X.shape[0] * X.shape[1], X.shape[2]))
 
     # CLuster with different values of k
-    for k in [10, 50, 100]:
-        monkey_clustering_kmeans(k, flat_X)
+    # for k in [10, 50, 100]:
+    #     monkey_clustering_kmeans(k, flat_X, X.shape)
+
     # Cluster with different values of l
     for l in [100, 20, 5]:
-        monkey_clustering_pdc_dp_means(l, flat_X)
+        monkey_clustering_pdc_dp_means(l, flat_X, X.shape)
 
 
 def main():
@@ -231,8 +232,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-# TODO:
-# 1. in the first section of task 2 add to description that its different datasets
-# 2. organize graphs order
-# 3. maybe add another graph to each algorithm
