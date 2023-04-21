@@ -221,7 +221,7 @@ def task3():
     #     monkey_clustering_kmeans(k, flat_X, X.shape)
 
     # Cluster with different values of l
-    for l in [100, 20, 5]:
+    for l in [1]:
         monkey_clustering_pdc_dp_means(l, flat_X, X.shape)
 
 
