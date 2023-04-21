@@ -217,8 +217,8 @@ def task3():
     flat_X = X.reshape((X.shape[0] * X.shape[1], X.shape[2]))
 
     # CLuster with different values of k
-    # for k in [10, 50, 100]:
-    #     monkey_clustering_kmeans(k, flat_X, X.shape)
+    for k in [10, 50, 100]:
+        monkey_clustering_kmeans(k, flat_X, X.shape)
 
     # Cluster with different values of l
     for l in [1]:
