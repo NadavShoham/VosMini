@@ -5,10 +5,6 @@ from dpmmpython.priors import niw
 import numpy as np
 jl = Julia(compiled_modules=False)
 
-# TODO: install gpu version for faster development
-# TODO: rerun clustering notebook
-# TODO: build on clustering notebook reference
-
 
 def main():
     data, gt = DPMMPython.generate_gaussian_data(10000, 2, 10, 100.0)
