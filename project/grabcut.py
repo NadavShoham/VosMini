@@ -6,7 +6,7 @@ class GrabCut:
     def __init__(self, image: np.ndarray):
         self.image = image
         # Create an initial mask with zeros (all background)
-        self.mask = np.zeros(self.image.shape[:2], dtype=np.uint8)
+        self.mask = np.zeros(self.image.shape[:2], np.uint8)
 
         # Create a window for user interaction
         self.window_name = 'Mark Foreground'
@@ -15,7 +15,7 @@ class GrabCut:
         self.background = None
 
     # Function to perform GrabCut segmentation
-    def _perform_grabcut(self) -> np.ndarray:
+    def _perform_grabcut(self, rect) -> np.ndarray:
         foreground = np.zeros((1, 65), np.float64)
         background = np.zeros((1, 65), np.float64)
 
@@ -23,7 +23,7 @@ class GrabCut:
         cv2.grabCut(
             img=self.image,
             mask=self.mask,
-            rect=None,
+            rect=rect,
             bgdModel=background,
             fgdModel=foreground,
             iterCount=5,
@@ -32,33 +32,36 @@ class GrabCut:
 
         # Assign definite background and probable background as 0, others as 1
         mask = np.where((self.mask == 2) | (self.mask == 0), 0, 1).astype('uint8')
+        inverted_mask = 1 - mask
 
-        # Apply the mask to the input image
-        segmented_image = self.image * mask[:, :, np.newaxis]
+        # Apply the mask to the input image as the foreground
+        foreground = self.image * mask[:, :, np.newaxis]
 
-        return segmented_image
+        # Apply the inverted mask to the input image as the background
+        background = self.image * inverted_mask[:, :, np.newaxis]
+
+        return foreground, background
 
     def run(self):
         cv2.namedWindow(self.window_name)
 
         # Display the image and wait for user interaction
         cv2.imshow(self.window_name, self.image)
+
         # Prompt the user to select the object by drawing a bounding box
         object_box = cv2.selectROI(self.window_name, self.image, fromCenter=False, showCrosshair=True)
+
         cv2.destroyWindow(self.window_name)
 
         # Perform GrabCut segmentation based on the user markings
-        segmented_image = self._perform_grabcut()
-
-        # Create a black background image with the same size
-        background = np.zeros_like(self.image)
+        foreground, background = self._perform_grabcut(object_box)
 
         # Display the segmented foreground and background images
-        cv2.imshow('Foreground', segmented_image)
+        cv2.imshow('Foreground', foreground)
         cv2.imshow('Background', background)
         cv2.waitKey(0)
 
-        self.foreground = segmented_image
+        self.foreground = foreground
         self.background = background
 
         # Close all windows
@@ -74,4 +77,3 @@ if __name__ == '__main__':
     print(grabcut.background)
     cv2.imwrite('images/tinky_winky_foreground.jpg', grabcut.foreground)
     cv2.imwrite('images/tinky_winky_background.jpg', grabcut.background)
-
