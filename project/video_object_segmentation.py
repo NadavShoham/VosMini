@@ -1,7 +1,7 @@
+import os
 import cv2
 import numpy as np
 from grabcut import GrabCut
-from utils import extract_frames, build_video_from_frames, resize_frames
 from julia.api import Julia
 from dpmmpythonStreaming.dpmmwrapper import DPMMPython
 from dpmmpythonStreaming.priors import niw
@@ -14,30 +14,32 @@ def extract_gaussian_data_and_create_mixture(model):
     clusters = model.group.local_clusters
     means = []
     covariances = []
+    clusters_sizes = []
     for cluster in clusters:
         distribution = cluster.cluster_params.cluster_params.distribution
         means.append(distribution.μ)
         covariances.append(distribution.Σ)
+        clusters_sizes.append(cluster.points_count)
+    # all_points_count = sum(clusters_sizes)
+    # weights = [size / all_points_count for size in clusters_sizes]
     return GaussianMixture(means, covariances)
 
 
-def adjust_frame_for_algorithm(frame: np.ndarray, include_xy: bool = False, xy_factor: float = 1) -> np.ndarray:
-    shape = frame.shape
-    adjusted_frame = frame
-    if include_xy:
-        shape = (shape[0], shape[1], shape[2] + 2)
-        adjusted_frame = np.zeros(shape)
-        for i in range(shape[0]):
-            for j in range(shape[1]):
-                adjusted_frame[i, j] = np.append(frame[i, j], [i * xy_factor, j * xy_factor])
-    adjusted_frame = adjusted_frame.reshape(shape[2], shape[0] * shape[1]).astype(np.float32)
-    return adjusted_frame
+def choose_fps(prev_fps: int, frames_num: int) -> int:
+    value = frames_num // 10
+    if value < 10:
+        return value
+    return prev_fps
 
 
 class VideoObjectSegmentation:
-    def __init__(self, name: str):
-        self.name = "wolf"
+    def __init__(self, name: str, resize_ratio: float = 1.0, include_xy: bool = False, complement_with_white: bool = False):
+        self.name = name
         self.video_path = f"data/videos/{name}.mp4"
+        self.resize_ratio = resize_ratio
+        self.include_xy = include_xy
+        self.complement_with_white = complement_with_white
+
         self.fg = None
         self.bg = None
 
@@ -45,7 +47,26 @@ class VideoObjectSegmentation:
         self.bgm = None
         self.verbose = False
         self.save_images = False
+        self.show_clusters = False
+        self.use_max_pdf = False
         self.frame_idx = 0
+        self.original_shape = None
+
+    def _resize_frame(self, frame: np.ndarray) -> np.ndarray:
+        return cv2.resize(frame, (0, 0), fx=self.resize_ratio, fy=self.resize_ratio)
+
+    def _create_priors(self, use_niw: bool = False):
+        if use_niw:
+            fg_mean = np.mean(self.fg, axis=1)
+            fg_cov = np.cov(self.fg)
+            fg_prior = niw(1, fg_mean, self.fg.shape[1], fg_cov)
+            bg_mean = np.mean(self.bg, axis=1)
+            bg_cov = np.cov(self.bg)
+            bg_prior = niw(1, bg_mean, self.bg.shape[1], bg_cov)
+        else:
+            fg_prior = DPMMPython.create_prior(self.fg.shape[1], 0, 100, 80, 120)
+            bg_prior = DPMMPython.create_prior(self.bg.shape[1], 0, 100, 80, 120)
+        return fg_prior, bg_prior
 
     def _classify_first_frame(self, frame: np.ndarray, transparency: float = 0.2) -> np.ndarray:
         if self.verbose:
@@ -63,77 +84,72 @@ class VideoObjectSegmentation:
             cv2.imwrite(f"data/images/{self.name}/frame{self.frame_idx}.png", marked_frame)
         return marked_frame
 
-    def _classify_pixels_and_adjust_for_algorithm(
+    def _preprocess_frame(self, frame: np.ndarray) -> np.ndarray:
+        shape = frame.shape
+        mod_frame = frame
+        if self.include_xy:
+            shape = (shape[0], shape[1], shape[2] + 2)
+            mod_frame = np.zeros(shape)
+            for i in range(shape[0]):
+                for j in range(shape[1]):
+                    mod_frame[i, j] = np.append(frame[i, j], [i / shape[0], j / shape[1]])
+        mod_frame = mod_frame.reshape(shape[0] * shape[1], shape[2]).astype(np.float32)
+        mod_frame = mod_frame.T
+        return mod_frame
+
+    def _is_pixel_in_object(self, pixel: np.ndarray):
+        if self.use_max_pdf:
+            return self.fgm.max_pdf(pixel) > self.bgm.max_pdf(pixel)
+        else:
+            return self.fgm.pdf(pixel) > self.bgm.pdf(pixel)
+
+    def _classify_frame(
             self,
-            frame: np.ndarray,
+            origin_frame: np.ndarray,
+            mod_frame: np.ndarray,
             transparency: float = 0.2,
-            include_xy: bool = False,
-            xy_factor: float = 1.0
-    ) -> (np.ndarray, np.ndarray, np.ndarray):
+    ) -> np.ndarray:
 
         # classification set up
-        foreground_coloring = np.zeros(frame.shape)
-        foreground = np.zeros(frame.shape)
-        background = np.zeros(frame.shape)
+        shape = mod_frame.shape
+        foreground_coloring = np.zeros((3, shape[1]), dtype=np.float32)
+        foreground = np.zeros(shape, dtype=np.float32)
+        background = np.zeros(shape, dtype=np.float32)
+        all_green = np.zeros((3, shape[1]), dtype=np.float32)
+        all_green[1] = 255
+        classified_pixels = np.apply_along_axis(func1d=self._is_pixel_in_object, axis=0, arr=mod_frame)
 
-        # algorithm frame adjustment set up
-        shape = frame.shape
-        adjusted_fg = foreground
-        adjusted_bg = background
-        if include_xy:
-            shape = (shape[0], shape[1], shape[2] + 2)
-            adjusted_fg = np.zeros(shape)
-            adjusted_bg = np.zeros(shape)
+        foreground[:, classified_pixels] = mod_frame[:, classified_pixels]
+        background[:, ~classified_pixels] = mod_frame[:, ~classified_pixels]
+        foreground_coloring[:, classified_pixels] = all_green[:, classified_pixels]
+        foreground_coloring = foreground_coloring.T.reshape(origin_frame.shape)
 
-        # using the same loop for 2 purposes to save time
-        for i in range(frame.shape[0]):
-            for j in range(frame.shape[1]):
-                pixel = frame[i, j]
-                extended_pixel = np.append(pixel, [i * xy_factor, j * xy_factor])
-                pixel_to_sample = pixel if not include_xy else extended_pixel
-                if self.fgm.pdf(pixel_to_sample) > self.bgm.pdf(pixel_to_sample):
-                    foreground[i, j] = pixel
-                    foreground_coloring[i, j] = [0, 255, 0]
-                    if include_xy:
-                        adjusted_fg[i, j] = extended_pixel
-                else:
-                    background[i, j] = pixel
-                    if include_xy:
-                        adjusted_bg[i, j] = extended_pixel
-
-        # classification
-        marked_frame = cv2.addWeighted(foreground_coloring, transparency, frame, 1 - transparency, 0, dtype=cv2.CV_8U)
-        if self.save_images:
-            cv2.imwrite(f"data/images/{self.name}/frame{self.frame_idx}.png", marked_frame)
-            cv2.imwrite(f"data/images/{self.name}/frame{self.frame_idx}_foreground.png", foreground)
-            cv2.imwrite(f"data/images/{self.name}/frame{self.frame_idx}_background.png", background)
-
-        # algorithm frame adjustment
-        self.fg, self.bg = adjusted_fg, adjusted_bg
-        adjusted_fg = adjusted_fg.reshape(shape[2], shape[0] * shape[1]).astype(np.float32)
-        adjusted_bg = adjusted_bg.reshape(shape[2], shape[0] * shape[1]).astype(np.float32)
-
-        return adjusted_fg, adjusted_bg, marked_frame
+        marked_frame = cv2.addWeighted(foreground_coloring, transparency, origin_frame, 1 - transparency, 0, dtype=cv2.CV_8U)
+        self.fg, self.bg = foreground, background
+        return marked_frame
 
     def _get_foreground_background(self, frame: np.ndarray, show: bool = False) -> (np.ndarray, np.ndarray):
         if self.verbose:
             print("Getting foreground and background of first frame...")
 
-        first_frame_foreground = cv2.imread(f"data/images/{self.name}_first_frame_foreground.png")
-        first_frame_background = cv2.imread(f"data/images/{self.name}_first_frame_background.png")
+        os.makedirs(f"data/images/{self.name}", exist_ok=True)
+        fg_path = f"data/images/{self.name}/foreground_ratio{self.resize_ratio}.png"
+        bg_path = f"data/images/{self.name}/background_ratio{self.resize_ratio}.png"
+        first_frame_foreground = cv2.imread(fg_path)
+        first_frame_background = cv2.imread(bg_path)
 
         if first_frame_foreground is None or first_frame_background is None:
 
             if self.verbose:
                 print("No foreground and background found, running GrabCut...")
 
-            grab_cut = GrabCut(frame)
+            grab_cut = GrabCut(frame, complement_with_white=self.complement_with_white)
             grab_cut.run(show)
 
             first_frame_foreground, first_frame_background = grab_cut.foreground, grab_cut.background
 
-            cv2.imwrite(f"data/images/{self.name}_first_frame_foreground.png", first_frame_foreground)
-            cv2.imwrite(f"data/images/{self.name}_first_frame_background.png", first_frame_background)
+            cv2.imwrite(fg_path, first_frame_foreground)
+            cv2.imwrite(bg_path, first_frame_background)
 
             if self.verbose:
                 print(f"GrabCut done. Saved first frame foreground and background of {self.name} to data/images/")
@@ -141,80 +157,107 @@ class VideoObjectSegmentation:
         return first_frame_foreground, first_frame_background
 
     def segment(self,
-                frames_num: int = 100,
-                iters_of_fit_partial: int = 10,
-                resize: bool = True,
-                show_images: bool = False,
-                save_images: bool = False,
-                show_video: bool = False,
+                frames_num: int = 1000,
                 verbose: int = 0,
-                include_xy: bool = False,
-                xy_factor: float = 1.0
+                use_max_pdf: bool = False,
+                alpha: float = 10,
+                epsilon: float = 0.001,
+                use_niw_prior: bool = False,
+                run_fit_partial: bool = True,
+                iters_of_fit_partial: int = 10,
                 ):
+
         self.verbose = verbose
-        self.save_images = save_images
+        models_verbose = verbose > 1
         self.frame_idx = 0
-        frames = extract_frames(self.video_path)
-        if resize:
-            frames = resize_frames(frames, 0.3)
-        shape = frames[0].shape
+        self.use_max_pdf = use_max_pdf
+
+        video = cv2.VideoCapture(self.video_path)
+        ret, frame = video.read()
+        if not ret:
+            raise Exception(f"Failed to read video {self.video_path}")
+        if self.resize_ratio < 1:
+            frame = self._resize_frame(frame)
+        shape = frame.shape
 
         if self.verbose:
-            print(f"Loaded {len(frames)} frames from {self.video_path} with size {shape}")
+            print(f"Loaded first frame from {self.video_path} with size {shape}")
 
-        self.fg, self.bg = self._get_foreground_background(frames[0], show=show_images)
-        new_frames = [self._classify_first_frame(frames[0])]
+        height, width, layers = frame.shape
+        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+        fps = video.get(cv2.CAP_PROP_FPS)
+        output_path = f"data/new_videos/{self.name}.mp4"
+        new_video = cv2.VideoWriter(output_path, fourcc=fourcc, fps=choose_fps(fps, frames_num), frameSize=(width, height))
+
+        self.fg, self.bg = self._get_foreground_background(frame)
+        new_frame = self._classify_first_frame(frame)
+        os.makedirs(f"data/new_frames/{self.name}", exist_ok=True)
+        cv2.imwrite(f"data/new_frames/{self.name}/frame{self.frame_idx}.png", new_frame)
+        new_video.write(new_frame)
 
         if self.verbose:
             print("Initializing models prerequisites...")
-        frames = frames[1:frames_num]
+
         self.frame_idx += 1
-        adjusted_fg = adjust_frame_for_algorithm(self.fg, include_xy=include_xy, xy_factor=xy_factor)
-        adjusted_bg = adjust_frame_for_algorithm(self.bg, include_xy=include_xy, xy_factor=xy_factor)
+        self.fg = self._preprocess_frame(self.fg)
+        self.bg = self._preprocess_frame(self.bg)
         # Initialize the models
-        pixel_dim = adjusted_fg.shape[0]
-        # # TODO: optimize niw parameters like in or dinaris julia example
-        prior = niw(1, np.zeros(pixel_dim), pixel_dim, np.eye(pixel_dim) * 0.5)
-        alpha = 10.0
-        epsilon = 0.0000001
+
+        fg_prior, bg_prior = self._create_priors(use_niw=use_niw_prior)
 
         if self.verbose:
             print("Initializing models...")
             print("Running fit_init on first frame foreground and background...")
-        models_verbose = verbose > 1
-        bg_model = DPMMPython.fit_init(
-            data=adjusted_fg, alpha=alpha, prior=prior, verbose=models_verbose, burnout=5, gt=None, epsilon=epsilon
-        )
+
         fg_model = DPMMPython.fit_init(
-            data=adjusted_bg, alpha=alpha, prior=prior, verbose=models_verbose, burnout=5, gt=None, epsilon=epsilon
+            data=self.fg, alpha=alpha, prior=fg_prior, verbose=models_verbose, burnout=5, gt=None, epsilon=epsilon
         )
+        bg_model = DPMMPython.fit_init(
+            data=self.bg, alpha=alpha, prior=bg_prior, verbose=models_verbose, burnout=5, gt=None, epsilon=epsilon
+        )
+
         if self.verbose:
             print("Done.")
-            print("Starting segmentation loop on rest of frames...")
+            print("Starting segmentation loop on rest of frames...", end="")
 
-        iterable = frames if models_verbose else tqdm(frames)
-        for frame in iterable:
+        iterable = range(frames_num) if models_verbose else tqdm(range(frames_num))
+        for _ in iterable:
+            ret, frame = video.read()
+            if not ret:
+                break
+            if self.resize_ratio < 1:
+                frame = self._resize_frame(frame)
+
             if models_verbose:
                 print(f"Segmenting frame {self.frame_idx}...")
-                print("Creating gaussian mixtures from models...")
+                print("Creating gaussian mixtures from models...", end="")
 
             self.fgm = extract_gaussian_data_and_create_mixture(fg_model)
             self.bgm = extract_gaussian_data_and_create_mixture(bg_model)
 
             if models_verbose:
                 print("Done.")
-                print("Classifying pixels to foreground and background...")
+                print("Preprocessing frame for algorithm...", end="")
 
-            adjusted_fg, adjusted_bg, new_frame = \
-                self._classify_pixels_and_adjust_for_algorithm(frame, include_xy=include_xy, xy_factor=xy_factor)
-            new_frames.append(new_frame)
+            mod_frame = self._preprocess_frame(frame)
 
             if models_verbose:
                 print("Done.")
-                print("Running fit_partial on new foreground and background...")
+                print("Classifying pixels to foreground and background...", end="")
 
-            fg_model = DPMMPython.fit_partial(model=fg_model, data=adjusted_fg, t=2, iterations=iters_of_fit_partial)
-            bg_model = DPMMPython.fit_partial(model=bg_model, data=adjusted_bg, t=2, iterations=iters_of_fit_partial)
+            new_frame = self._classify_frame(frame, mod_frame)
+            cv2.imwrite(f"data/new_frames/{self.name}/frame{self.frame_idx}.png", new_frame)
+            new_video.write(new_frame)
+
+            if run_fit_partial:
+                if models_verbose:
+                    print("Done.")
+                    print("Running fit_partial on new foreground and background...", end="")
+
+                fg_model = DPMMPython.fit_partial(
+                    model=fg_model, data=self.fg, t=self.frame_idx, iterations=iters_of_fit_partial)
+                bg_model = DPMMPython.fit_partial(
+                    model=bg_model, data=self.bg, t=self.frame_idx, iterations=iters_of_fit_partial)
 
             self.frame_idx += 1
 
@@ -224,5 +267,13 @@ class VideoObjectSegmentation:
         if self.verbose:
             print("Segmentation done.")
 
-        build_video_from_frames(new_frames, f"data/videos/{self.name}_new.mp4", show_video=show_video)
+        video.release()
+        new_video.release()
+        cv2.destroyAllWindows()
 
+
+if __name__ == '__main__':
+    a = np.ones((3, 4))
+    b = np.array([[True], [False], [True]])
+    a[:, b] = [0, 255, 0]
+    print(a)

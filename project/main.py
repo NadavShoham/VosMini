@@ -7,6 +7,8 @@ from video_object_segmentation import VideoObjectSegmentation
 # 5. try other videos
 # 6. add a cmd line script
 # 7. add a readme
+# 8. add a requirements.txt?
+# 9. clean up code and directory structure
 
 
 def main(*args, **kwargs):
@@ -15,20 +17,23 @@ def main(*args, **kwargs):
     # resize = kwargs["resize"]
     # show_images = kwargs["show_images"]
 
-    name = "wolf"
-    resize = True
-    show_images = False
+    name = "dog"
 
-    vos = VideoObjectSegmentation(name=name)
-    vos.segment(
-        frames_num=10,
-        iters_of_fit_partial=5,
-        resize=resize,
-        show_images=show_images,
-        verbose=1,
-        save_images=True,
+    vos = VideoObjectSegmentation(
+        name=name,
         include_xy=True,
-        xy_factor=1.0
+        resize_ratio=0.5,
+        complement_with_white=False
+    )
+    vos.segment(
+        frames_num=20,
+        verbose=1,
+        use_max_pdf=False,
+        alpha=100.0,
+        epsilon=0.0000001,
+        use_niw_prior=True,
+        run_fit_partial=False,
+        iters_of_fit_partial=5,
     )
 
 

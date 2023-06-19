@@ -4,12 +4,13 @@ from typing import Tuple
 
 
 class GrabCut:
-    def __init__(self, image: np.ndarray):
+    def __init__(self, image: np.ndarray, complement_with_white=False):
         self.image = image
         self.mask = np.zeros(self.image.shape[:2], np.uint8)
         self.window_name = 'Mark Foreground'
         self.foreground = None
         self.background = None
+        self.complement_with_white = complement_with_white
 
     def _perform_grabcut(self, rect) -> Tuple[np.ndarray, np.ndarray]:
         foreground = np.zeros((1, 65), np.float64)
@@ -34,6 +35,10 @@ class GrabCut:
 
         # Apply the inverted mask to the input image as the background
         background = self.image * inverted_mask[:, :, np.newaxis]
+
+        if self.complement_with_white:
+            foreground = foreground + 255 * inverted_mask[:, :, np.newaxis]
+            background = background + 255 * mask[:, :, np.newaxis]
 
         return foreground, background
 
