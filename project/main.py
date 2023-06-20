@@ -1,44 +1,36 @@
 from video_object_segmentation import VideoObjectSegmentation
-#TODO: tasks:
-# 1. fix bug that results in fgm pdf always winning
-# 2. optimize niw parameters like in or dinaris julia example
-# 3. optimize as talked with oren
-# 4. create latex report
-# 5. try other videos
-# 6. add a cmd line script
-# 7. add a readme
-# 8. add a requirements.txt?
-# 9. clean up code and directory structure
+import sys
 
 
 def main(*args, **kwargs):
-    # TODO: option to use a cmd line script
-    # name = args[0]
-    # resize = kwargs["resize"]
-    # show_images = kwargs["show_images"]
+    name = kwargs.get("name")
+    if not name:
+        raise ValueError("name must be provided")
+    init_params = {}
+    segments_params = {}
 
-    name = "dog"
+    for key, value in kwargs.items():
+        if key in ["name", "data_path"]:
+            init_params[key] = value
+        elif key in ["include_xy", "complement_with_white"]:
+            init_params[key] = bool(value)
+        elif key in ["resize_ratio"]:
+            init_params[key] = float(value)
+        elif key in ["use_max_pdf", "use_niw_prior", "run_fit_partial"]:
+            segments_params[key] = bool(value)
+        elif key in ["iters_of_fit_partial", "frames_num", "verbose"]:
+            segments_params[key] = int(value)
+        elif key in ["close_tol", "redundancy_tol", "alpha", "epsilon"]:
+            segments_params[key] = float(value)
+        else:
+            raise ValueError(f"Unknown key: {key}")
 
-    vos = VideoObjectSegmentation(
-        name=name,
-        include_xy=True,
-        resize_ratio=0.5,
-        complement_with_white=False
-    )
-    vos.segment(
-        frames_num=20,
-        verbose=1,
-        use_max_pdf=False,
-        alpha=100.0,
-        epsilon=0.0000001,
-        use_niw_prior=True,
-        run_fit_partial=False,
-        iters_of_fit_partial=5,
-    )
+    vos = VideoObjectSegmentation(**init_params)
+    vos.segment(**segments_params)
 
 
 if __name__ == '__main__':
-    # TODO: option to use a cmd line script
+    # TODO: uncomment this to use command line arguments, fix 'name' parameter
     # args = sys.argv[1:]
     # kwargs = {}
     # for arg in args:
@@ -46,6 +38,58 @@ if __name__ == '__main__':
     #         key, value = arg.split("=")
     #         kwargs[key[2:]] = value
     # main(*args, **kwargs)
-    main()
+
+    dinosaur_config1 = {
+        "name": "dinosaur",
+        "include_xy": True,
+        "resize_ratio": 0.5,
+        "complement_with_white": False,
+        "frames_num": 24 * 5,
+        "verbose": 1,
+        "use_max_pdf": False,
+        "alpha": 100.0,
+        "epsilon": 0.0000001,
+        "use_niw_prior": True,
+        "run_fit_partial": True,
+        "iters_of_fit_partial": 5,
+        "close_tol": 1e-8,
+        "redundancy_tol": 1e-8,
+    }
+
+    dinosaur_config2 = {
+        "name": "dinosaur",
+        "include_xy": True,
+        "resize_ratio": 0.5,
+        "complement_with_white": False,
+        "frames_num": 24 * 5,
+        "verbose": 1,
+        "use_max_pdf": False,
+        "alpha": 100.0,
+        "epsilon": 0.0000001,
+        "use_niw_prior": True,
+        "run_fit_partial": True,
+        "iters_of_fit_partial": 3,
+        "close_tol": 1e-9,
+        "redundancy_tol": 1e-9,
+    }
+
+    swan_config1 = {
+        "name": "swan",
+        "include_xy": True,
+        "resize_ratio": 0.5,
+        "complement_with_white": False,
+        "frames_num": 24 * 5,
+        "verbose": 1,
+        "use_max_pdf": True,
+        "alpha": 100.0,
+        "epsilon": 0.0000001,
+        "use_niw_prior": True,
+        "run_fit_partial": True,
+        "iters_of_fit_partial": 5,
+        "close_tol": 1e-27,
+        "redundancy_tol": 1e-27,
+    }
+
+    main(**dinosaur_config2)
 
 

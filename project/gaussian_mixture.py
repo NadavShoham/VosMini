@@ -5,11 +5,10 @@ import numpy as np
 
 @dataclass
 class GaussianMixture:
-    def __init__(self, means, covariances, weights = None):
+    def __init__(self, means, covariances, weights=None):
         self.means = means
         self.covariances = covariances
         self.weights = weights if weights else [1/len(means)]*len(means)
-
         self.gaussians = [multivariate_normal(mean, covariance) for mean, covariance in zip(means, covariances)]
 
     def pdf(self, x):

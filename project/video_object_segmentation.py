@@ -20,9 +20,9 @@ def extract_gaussian_data_and_create_mixture(model):
         means.append(distribution.μ)
         covariances.append(distribution.Σ)
         clusters_sizes.append(cluster.points_count)
-    # all_points_count = sum(clusters_sizes)
-    # weights = [size / all_points_count for size in clusters_sizes]
-    return GaussianMixture(means, covariances)
+    all_points_count = sum(clusters_sizes)
+    weights = [size / all_points_count for size in clusters_sizes]
+    return GaussianMixture(means, covariances, weights)
 
 
 def choose_fps(prev_fps: int, frames_num: int) -> int:
@@ -33,8 +33,17 @@ def choose_fps(prev_fps: int, frames_num: int) -> int:
 
 
 class VideoObjectSegmentation:
-    def __init__(self, name: str, resize_ratio: float = 1.0, include_xy: bool = False, complement_with_white: bool = False):
+    def __init__(
+            self,
+            name: str,
+            resize_ratio: float = 1.0,
+            include_xy: bool = False,
+            complement_with_white: bool = False,
+            data_path: str = "data",
+    ):
         self.name = name
+        self.data_path = data_path
+        self._make_data_dir(data_path)
         self.video_path = f"data/videos/{name}.mp4"
         self.resize_ratio = resize_ratio
         self.include_xy = include_xy
@@ -51,6 +60,19 @@ class VideoObjectSegmentation:
         self.use_max_pdf = False
         self.frame_idx = 0
         self.original_shape = None
+        self.close_tol = None
+        self.redundancy_tol = None
+
+    def _make_data_dir(self, data_path: str):
+        videos_path = os.path.join(data_path, "videos")
+        images_path = os.path.join(data_path, f"images/{self.name}")
+        new_videos_path = os.path.join(data_path, "new_videos")
+        new_frames_path = os.path.join(data_path, f"new_frames/{self.name}")
+
+        os.makedirs(videos_path, exist_ok=True)
+        os.makedirs(images_path, exist_ok=True)
+        os.makedirs(new_videos_path, exist_ok=True)
+        os.makedirs(new_frames_path, exist_ok=True)
 
     def _resize_frame(self, frame: np.ndarray) -> np.ndarray:
         return cv2.resize(frame, (0, 0), fx=self.resize_ratio, fy=self.resize_ratio)
@@ -59,13 +81,13 @@ class VideoObjectSegmentation:
         if use_niw:
             fg_mean = np.mean(self.fg, axis=1)
             fg_cov = np.cov(self.fg)
-            fg_prior = niw(1, fg_mean, self.fg.shape[1], fg_cov)
+            fg_prior = niw(1, fg_mean, self.fg.shape[0], fg_cov)
             bg_mean = np.mean(self.bg, axis=1)
             bg_cov = np.cov(self.bg)
-            bg_prior = niw(1, bg_mean, self.bg.shape[1], bg_cov)
+            bg_prior = niw(1, bg_mean, self.bg.shape[0], bg_cov)
         else:
-            fg_prior = DPMMPython.create_prior(self.fg.shape[1], 0, 100, 80, 120)
-            bg_prior = DPMMPython.create_prior(self.bg.shape[1], 0, 100, 80, 120)
+            fg_prior = DPMMPython.create_prior(self.fg.shape[0], 0, 100, 80, 120)
+            bg_prior = DPMMPython.create_prior(self.bg.shape[0], 0, 100, 80, 120)
         return fg_prior, bg_prior
 
     def _classify_first_frame(self, frame: np.ndarray, transparency: float = 0.2) -> np.ndarray:
@@ -98,10 +120,12 @@ class VideoObjectSegmentation:
         return mod_frame
 
     def _is_pixel_in_object(self, pixel: np.ndarray):
-        if self.use_max_pdf:
-            return self.fgm.max_pdf(pixel) > self.bgm.max_pdf(pixel)
-        else:
-            return self.fgm.pdf(pixel) > self.bgm.pdf(pixel)
+        eval_pdf = GaussianMixture.max_pdf if self.use_max_pdf else GaussianMixture.pdf
+        fg_pdf_val = eval_pdf(self.fgm, pixel)
+        bg_pdf_val = eval_pdf(self.bgm, pixel)
+        close = np.isclose(fg_pdf_val, bg_pdf_val, atol=self.close_tol)
+        redundant = fg_pdf_val < self.redundancy_tol
+        return fg_pdf_val > bg_pdf_val and not close and not redundant
 
     def _classify_frame(
             self,
@@ -110,7 +134,6 @@ class VideoObjectSegmentation:
             transparency: float = 0.2,
     ) -> np.ndarray:
 
-        # classification set up
         shape = mod_frame.shape
         foreground_coloring = np.zeros((3, shape[1]), dtype=np.float32)
         foreground = np.zeros(shape, dtype=np.float32)
@@ -165,17 +188,21 @@ class VideoObjectSegmentation:
                 use_niw_prior: bool = False,
                 run_fit_partial: bool = True,
                 iters_of_fit_partial: int = 10,
+                close_tol: float = 1e-7,
+                redundancy_tol: float = 1e-7,
                 ):
 
         self.verbose = verbose
         models_verbose = verbose > 1
         self.frame_idx = 0
         self.use_max_pdf = use_max_pdf
+        self.close_tol = close_tol
+        self.redundancy_tol = redundancy_tol
 
         video = cv2.VideoCapture(self.video_path)
         ret, frame = video.read()
         if not ret:
-            raise Exception(f"Failed to read video {self.video_path}")
+            raise Exception(f"Failed to read video {self.video_path}, please move video to {self.data_path}/videos/")
         if self.resize_ratio < 1:
             frame = self._resize_frame(frame)
         shape = frame.shape
@@ -273,7 +300,12 @@ class VideoObjectSegmentation:
 
 
 if __name__ == '__main__':
-    a = np.ones((3, 4))
-    b = np.array([[True], [False], [True]])
-    a[:, b] = [0, 255, 0]
-    print(a)
+    gm1 = GaussianMixture([[0, 0, 0]], [[[1, 0, 0], [0, 1, 0], [0, 0, 1]]])
+    gm2 = GaussianMixture([[0, 0, 0]], [[[1, 0, 0], [0, 1, 0], [0, 0, 1]]])
+    pixel = np.array([0, 0, 0])
+    vos = VideoObjectSegmentation(name="test")
+    vos.fgm = gm1
+    vos.bgm = gm2
+    print(vos._is_pixel_in_object(pixel))
+
+

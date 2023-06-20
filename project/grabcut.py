@@ -66,8 +66,8 @@ if __name__ == '__main__':
     image = cv2.imread('data/images/tinky_winky.jpeg')
     grabcut = GrabCut(image)
     grabcut.run()
-    print(grabcut.foreground)
-    print(grabcut.background)
+    cv2.imshow('Foreground', grabcut.foreground)
+    cv2.imshow('Background', grabcut.background)
     cv2.imwrite('data/images/tinky_winky_foreground.jpg', grabcut.foreground)
     cv2.imwrite('data/images/tinky_winky_background.jpg', grabcut.background)
 

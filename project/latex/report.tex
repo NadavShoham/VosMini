@@ -1,0 +1,185 @@
+\documentclass[12pt]{article}
+
+\usepackage{mathtools}
+\usepackage{amsfonts}
+\usepackage{amsthm}
+\usepackage{amssymb}
+\usepackage{relsize}
+\usepackage[margin=1in]{geometry}
+\usepackage{graphicx}
+\usepackage{dblfloatfix}
+\usepackage[font=normalsize,labelfont=bf]{caption}
+\usepackage{amsmath}
+\usepackage{textcomp}
+\usepackage{hyperref}
+\usepackage{listing}
+\usepackage{listings}
+\usepackage{calc}
+\usepackage{xcolor}
+\usepackage{empheq}
+
+
+
+
+\graphicspath{ {../data/} }
+
+\newtheorem{theorem}{Theorem}[section]
+\newtheorem{corollary}{Corollary}[theorem]
+\newtheorem{lemma}[theorem]{Lemma}
+\newtheorem{definition}{Definition}[section]
+
+\newcommand{\ltwonorm}[1]{\|#1\|_2^2}
+\newcommand{\tran}[1]{#1^T}
+
+\definecolor{codegreen}{rgb}{0,0.6,0}
+\definecolor{codegray}{rgb}{0.5,0.5,0.5}
+\definecolor{codepurple}{rgb}{0.58,0,0.82}
+\definecolor{backcolour}{rgb}{0.95,0.95,0.92}
+
+\lstdefinestyle{mystyle}{
+    backgroundcolor=\color{backcolour},
+    commentstyle=\color{codegreen},
+    keywordstyle=\color{magenta},
+    numberstyle=\tiny\color{codegray},
+    stringstyle=\color{codepurple},
+    basicstyle=\ttfamily\footnotesize,
+    breakatwhitespace=false,
+    breaklines=true,
+    captionpos=b,
+    keepspaces=true,
+    numbers=left,
+    numbersep=5pt,
+    showspaces=false,
+    showstringspaces=false,
+    showtabs=false,
+    tabsize=2
+}
+
+\lstset{style=mystyle}
+
+\title{Video Object Segmentation}
+\author{Shir Hamawie \& Nadav Shoham}
+\date{\today}
+
+\begin{document}
+\maketitle
+    \section{Introduction}\label{sec:intro}
+    Video object segmentation is a task in computer vision that involves extracting the foreground objects of interest from a video sequence.
+    One way to perform this task is by a semi-supervised video object segmentation method.
+    This method leverages only one manual annotation in the initial frame of the video, known as the ground-truth mask, and aims to propagate this annotation to subsequent frames in an unsupervised manner. \\
+    In this assignment, we aim to design and implement that, based on Or Dinari's ScStream code as a building block.
+    The ScStream code provides a foundation for processing video streams efficiently. \\
+We will use a video of a walking 3D dinosaur as our test case, here is the first frame:
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=0.7\textwidth]{images/dinosaur/first_frame_ratio1.0}
+    \caption{First frame of the video}
+    \label{fig:dino_frame_0}
+\end{figure}
+
+The remainder of this report is organized as follows:
+    \begin{itemize}
+        \item \underline{Section 2 - } provides a brief overview of Or Dinari's ScStream.
+        \item \underline{Section 3 - } we describe the methodology and architecture in detail.
+        \item \underline{Section 4 - } presents the critical points that most influenced the application.
+        \item \underline{Section 5 - } conclusion.
+    \end{itemize}
+
+\pagebreak
+    \section{Background}\label{sec:background}
+        \subsection{DP-Means}\label{subsec:dpmeans}
+DP-Means is a clustering algorithm based on the Dirichlet Process Mixture Model (DPMM).
+It aims to automatically determine the number of clusters in a dataset without requiring a predefined number of clusters.
+However, DP-Means can be computationally expensive, especially for large datasets, as it involves calculating pairwise distances between data points.
+        \subsection{PDC-DP-Mean}\label{subsec:pdc}
+PDC-DP-Means is a method proposed by Or Dinari and Freifeld in 2022 that builds upon the DP-Means algorithm.
+PDC-DP-Means is designed to address the limitations of traditional DP-Means in terms of scalability and computational efficiency.
+PDC-DP-Means introduces parallelism and delayed cluster creation to improve the scalability and efficiency of DP-Means.
+By leveraging parallel computing techniques, PDC-DP-Means can distribute the computational load across multiple threads or machines, enabling faster processing of large datasets.
+This parallelization significantly reduces the runtime of the algorithm.
+Additionally, PDC-DP-Means incorporates delayed cluster creation, which allows for more efficient memory usage.
+Instead of creating clusters for all data points at once, PDC-DP-Means delays the creation of clusters until they are needed.
+This approach reduces the memory requirements of the algorithm, making it more suitable for handling large-scale datasets.
+The combination of parallelism and delayed cluster creation in PDC-DP-Means results in a highly scalable and efficient algorithm for clustering.
+It enables the algorithm to handle large datasets with improved computational speed and reduced memory usage compared to traditional DP-Means.
+        \subsection{ScStream}\label{subsec:scstream}
+ScStream is a method proposed by Or Dinari and Freifeld in 2022 that builds upon the principles of DPMM.
+It is specifically designed for clustering streaming data, where data arrives in a continuous and sequential manner.
+ScStream leverages the sampling-based approach of DPMM to perform clustering on streaming data efficiently.
+The key advantage of ScStream is its ability to handle any exponential family, making it suitable for a wide range of data types.
+It offers a fast implementation that can work in either multi-threaded mode or multi-machine multi-process mode, enabling scalability and parallelization.
+\pagebreak
+
+\section{Methodology}\label{sec:methodology}
+Our proposed method for semi-supervised video object segmentation consists of several key steps, which we will outline in detail.
+The overall workflow follows a sequential process at each iteration, starting with foreground and background extraction,
+followed by ScStream model training, and finally the creation of Gaussian data mixtures to be used in the next iteration.
+The central method of our implementation is the \textbf{segment} method in \textcolor{red}{video\_object\_segmentation.py}.
+\subsection{First Frame}\label{subsec:first-frame}
+\subsubsection{Initial Foreground and Background Extraction}\label{subsubsec:initial-foreground-and-background-extraction}
+The first step of our method involves extracting the foreground and background regions from the initial frame of the video.
+To accomplish this, we employ the \textbf{GrabCut} algorithm, a popular technique for interactive foreground extraction in images.
+The GrabCut algorithm combines color and spatial information to iteratively refine the foreground and background segmentation.
+It requires an initial bounding box or a rough mask specifying the location of the foreground object.
+In our case, this a great option to define the ground-truth mask of the object in the first video frame, since it is a semi-supervised method.
+Our implementation of GrabCut uses the OpenCV library and can be found in the \textcolor{red}{grab\_cut.py} file.
+Example result:
+\begin{figure}[h!]
+    \begin{minipage}{0.5\textwidth}
+    \centering
+    \includegraphics[scale=0.4]{images/dinosaur/foreground_ratio1.0}
+    \caption{Foreground}
+    \end{minipage}
+    \begin{minipage}{0.5\textwidth}
+    \centering
+    \includegraphics[scale=0.4]{images/dinosaur/background_ratio1.0}
+    \caption{Background}
+    \end{minipage}\label{fig:foreground extraction}
+\end{figure}
+
+\subsubsection{Models Initialization}
+Once the foreground and background regions of the current frame have been extracted, we proceed to initialize our models.
+Our goal is to be able to classify data to foreground and background by their characteristics.
+Therefore, creating a model for each of them will create two separate and different gaussians that we can later extract from the models and use as our classifiers.
+When initializing our models with \texttt{fit\_init} we have do some hyper-parameter tuning that we will discuss in the next section.
+\pagebreak
+\subsection{Segmentation Loop}\label{subsec: segment-loop}
+\subsubsection{Creation of Gaussian Data Mixtures}\label{subsubsec:gaussians}
+As previously said the gaussians of the foreground and background models are our classifiers, helping us determine how to separate a new frame into 2 parts.
+we can build them by extracting the means and covariances of the clusters from each model and initialize a \textbf{GaussianMixture} instance for both of them.
+The GaussianMixture class is defined in \textcolor{red}{gaussian\_mixture.py} and uses \texttt{Scipy.stats.multivariate\_normal} to represent each gaussian.
+The class supports two pdf options, pdf of the mixture using weights and sum of all gaussians pdfs, and max pdf that returns the gaussian pdf with the largest value.
+\lstinputlisting[language=Python, firstline=7, lastline=20,label={lst:gaussians}]{../gaussian_mixture.py}
+\subsubsection{Foreground and Background Extraction}\label{subsubsec: fg-bg-extract}
+Now that we can no longer supervise the separation of the foreground and background we need to define a decision rule
+that exploits the given gaussianMixtures and classifies each pixel in the new frame into foreground and background.
+This is the most time-consuming part of our loop as we need to go over every pixel and calculate its pdfs.
+Further discussion about the decision rule will be in the next section.
+
+\subsubsection{Model adjustment}\label{subsubsec:model-adjust}
+Given we have a new foreground and background we should utilize them to update our models, given it is very likely that our object changed its position from the previous frame.
+The updated models will provide new gaussian mixtures that should classify the next frame better than the previous mixtures.
+The adjustment stage will also be discussed in the next section.
+\pagebreak
+
+\subsection{Building The Segmented Video}\label{subsec:build-segment-video}
+At each iteration we produce foreground and background images for each frame, which we can use to build a segmented video.
+To highlight the foreground object, we can apply a color mask to the foreground image.
+The color mask is simply a binary mask with the same dimensions as the foreground image, where the foreground pixels are set to green and the background pixels are set to black.
+Then using the OpenCV library, we can apply the color mask to the original frame to highlight the foreground object.
+This is implemented in the \textbf{classify\_frame} method in \textcolor{red}{video\_object\_segmentation.py}.
+\begin{figure}[h!]
+    \centering
+    \includegraphics[scale=1]{new_frames/dinosaur_best/frame0}
+    \caption{Segmented first frame}
+    \label{fig:segmented-video}
+\end{figure}
+
+\pagebreak
+    \section{Critical points}\label{sec:critical}
+\subsection{Including X and Y}\label{subsec:xy}
+\subsection{Decision Rule}\label{subsec:decision}
+\subsection{Defining The Prior}\label{subsec:prior}
+\subsection{Model Adjustment}\label{subsec:model}
+    \section{Conclusion}\label{sec:conclusion}
+\end{document}

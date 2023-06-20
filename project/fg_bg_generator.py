@@ -20,13 +20,14 @@ def extract_background(name, resize_ratio=1.0):
     foreground_path = f"data/images/{name}/foreground_ratio{resize_ratio}.png"
     frame = cv2.imread(frame_path)
     foreground = cv2.imread(foreground_path)
-    background = cv2.bitwise_xor(frame, foreground)
+    background = np.zeros_like(frame)
+    background[foreground == 0] = frame[foreground == 0]
     save_path = f"data/images/{name}/background_ratio{resize_ratio}.png"
     cv2.imwrite(save_path, background)
 
 
 if __name__ == '__main__':
-    name = "dog"
-    resize_ratio = 0.5
+    name = "dinosaur"
+    resize_ratio = 1.0
     # extract_first_frame(name, resize_ratio)
     extract_background(name, resize_ratio)
