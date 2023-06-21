@@ -80,16 +80,33 @@ if __name__ == '__main__':
         "complement_with_white": False,
         "frames_num": 24 * 5,
         "verbose": 1,
-        "use_max_pdf": True,
+        "use_max_pdf": False,
         "alpha": 100.0,
         "epsilon": 0.0000001,
         "use_niw_prior": True,
         "run_fit_partial": True,
-        "iters_of_fit_partial": 5,
-        "close_tol": 1e-27,
-        "redundancy_tol": 1e-27,
+        "iters_of_fit_partial": 3,
+        "close_tol": 1e-7,
+        "redundancy_tol": 1e-7,
     }
 
-    main(**dinosaur_config2)
+    giraffe_config1 = {
+        "name": "giraffe",
+        "include_xy": True,
+        "resize_ratio": 0.5,
+        "complement_with_white": False,
+        "frames_num": 24 * 5,
+        "verbose": 1,
+        "use_max_pdf": False,
+        "alpha": 100.0,
+        "epsilon": 0.0000001,
+        "use_niw_prior": True,
+        "run_fit_partial": True,
+        "iters_of_fit_partial": 3,
+        "close_tol": 1e-7,
+        "redundancy_tol": 1e-7,
+    }
+
+    main(**giraffe_config1)
 
 

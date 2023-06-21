@@ -12,12 +12,12 @@ class GaussianMixture:
         self.gaussians = [multivariate_normal(mean, covariance) for mean, covariance in zip(means, covariances)]
 
     def pdf(self, x):
-        pdfs = [weight * gaussian.pdf(x) for weight, gaussian in zip(self.weights, self.gaussians)]
-        return sum(pdfs)
+        pdfs = np.array([weight * gaussian.pdf(x) for weight, gaussian in zip(self.weights, self.gaussians)])
+        return np.sum(pdfs)
 
     def max_pdf(self, x):
-        pdfs = [gaussian.pdf(x) for gaussian in self.gaussians]
-        return max(pdfs)
+        pdfs = np.array([gaussian.pdf(x) for gaussian in self.gaussians])
+        return np.max(pdfs)
 
 
 def test_gaussian_mixture_pdf():

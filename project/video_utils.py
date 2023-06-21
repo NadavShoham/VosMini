@@ -21,6 +21,6 @@ def resize_video(name, resize_ratio=2):
 
 
 if __name__ == '__main__':
-    name = "dinosaur"
+    name = "swan_best"
     resize_ratio = 2
     resize_video(name, resize_ratio)

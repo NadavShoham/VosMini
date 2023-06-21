@@ -27,7 +27,7 @@ def extract_background(name, resize_ratio=1.0):
 
 
 if __name__ == '__main__':
-    name = "dinosaur"
+    name = "swan"
     resize_ratio = 1.0
     # extract_first_frame(name, resize_ratio)
     extract_background(name, resize_ratio)
