@@ -123,13 +123,17 @@ It offers a fast implementation that can work in either multi-threaded mode or m
 \input{critical_points}
 
 \section{Results \& Conclusion}\label{sec:conclusion}
-The results of our application can be viewed in the added videos.
-The results are not perfect, but they are good enough to show the potential of the application. \\
+The results of our application can be viewed in the added videos, both videos (swan and dinosaur) are 5 seconds long and at 24 frames per second, so they have 120 frames each.
+We also added another example of a giraffe video which is more complex and at 30 frames per second.
+The segmentations are not perfect, but they are good enough to show the potential of the application. \\
 In the dinosaur video, the application successfully segments the dinosaur from the background most of the video, but its legs and tail are sometimes escaping the segmentation.
 This could be because the right leg starts behind the left leg in the ground-truth mask, so it begins at a disadvantage.
 Also, the legs and tail are continuously moving in the depth axis, which might be a challenge for the application. \\
 In the swan video, we also get good results most of the video, this is especially impressive because of the swan's reflection in the water.
 Yet near the end of the video, the swan's front begins to move out of the segmentation, this could be because the decay factor is faster than the swan's movement. \\
+Finally, in the giraffe video, we get a decent segmentation of the giraffe, but the flaws are more noticeable.
+The part of the giraffe's that are not seen in the first frame or that are moving the most are the ones that escape the segmentation.
+Considering the complexity of the video, the results are still impressive. \\
 \\
 In conclusion, we have successfully implemented a semi-supervised video object segmentation application that uses Or Dinari's ScStream code as a building block.
 We detailed the methodology and architecture of our application and discussed the critical points that most influenced the application success.
